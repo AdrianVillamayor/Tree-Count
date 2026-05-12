@@ -1,0 +1,33 @@
+services:
+    db:
+        image: postgres:16-alpine
+        environment:
+            POSTGRES_USER: postgres
+            POSTGRES_PASSWORD: postgres
+            POSTGRES_DB: treecount
+        ports:
+            - "5432:5432"
+        volumes:
+            - pg-data:/var/lib/postgresql/data
+        healthcheck:
+            test: ["CMD-SHELL", "pg_isready -U postgres"]
+            interval: 2s
+            timeout: 5s
+            retries: 10
+
+    app:
+        build: .
+        ports:
+            - "3030:3030"
+        env_file: .env
+        healthcheck:
+            test: ["CMD", "node", "-e", "fetch('http://localhost:3030/api/health').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+            interval: 2s
+            timeout: 5s
+            retries: 10
+        depends_on:
+            db:
+                condition: service_healthy
+
+volumes:
+    pg-data:

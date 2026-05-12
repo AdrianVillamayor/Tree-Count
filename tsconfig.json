@@ -1,0 +1,42 @@
+{
+    "compilerOptions": {
+        "target": "ES2022",
+        "module": "ES2022",
+        "moduleResolution": "bundler",
+        "outDir": "dist",
+        "rootDir": "src",
+        "strict": true,
+        "esModuleInterop": true,
+        "skipLibCheck": true,
+        "forceConsistentCasingInFileNames": true,
+        "resolveJsonModule": true,
+        "declaration": true,
+        "types": [
+            "node"
+        ],
+        "paths": {
+            "@/*": [
+                "./src/*"
+            ],
+            "@schemas/*": [
+                "./src/schemas/*"
+            ],
+            "@crud/*": [
+                "./src/crud/*"
+            ],
+            "@routes/*": [
+                "./src/routes/*"
+            ],
+            "@db/*": [
+                "./src/db/*"
+            ]
+        }
+    },
+    "include": [
+        "src/**/*"
+    ],
+    "exclude": [
+        "node_modules",
+        "dist"
+    ]
+}

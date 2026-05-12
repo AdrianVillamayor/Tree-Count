@@ -1,0 +1,32 @@
+{
+    "name": "tree-count",
+    "description": "X Visits = 1 Tree — Shop visit tracking service that plants trees",
+    "version": "1.0.0",
+    "type": "module",
+    "packageManager": "pnpm@10.32.1",
+    "engines": {
+        "node": ">=20"
+    },
+    "scripts": {
+        "dev": "pnpm build:frontend && tsx watch src/index.ts",
+        "build": "pnpm build:frontend && tsc",
+        "build:frontend": "esbuild src/public/dashboard.ts --bundle --outfile=src/public/dashboard.js --minify",
+        "start": "node dist/index.js",
+        "test": "node --import tsx --test tests/*.test.ts",
+        "test:e2e": "node --import tsx tests/wait-for-server.ts && pnpm test"
+    },
+    "dependencies": {
+        "@hono/node-server": "^1.11.0",
+        "drizzle-orm": "^0.31.0",
+        "hono": "^4.4.0",
+        "postgres": "^3.4.9"
+    },
+    "devDependencies": {
+        "@types/node": "^20.14.0",
+        "drizzle-kit": "^0.22.0",
+        "esbuild": "^0.28.0",
+        "tsconfig-paths": "^4.2.0",
+        "tsx": "^4.15.0",
+        "typescript": "^5.5.0"
+    }
+}

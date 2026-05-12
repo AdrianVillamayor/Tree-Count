@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Tree Count — Dashboard</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+    </head>
+    <body class="bg-gray-950 text-white min-h-screen flex flex-col">
+        <div
+            class="w-full max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-10 flex-1">
+
+            <header
+                class="mb-8 sm:mb-10 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2">
+                <div>
+                    <h1
+                        class="text-2xl sm:text-3xl font-bold tracking-tight">Tree
+                        Count</h1>
+                    <p class="text-gray-400 text-sm sm:text-base mt-1">Visits
+                        per hour dashboard —
+                        <a href="/docs" target="_blank"
+                            class="text-green-400 hover:text-green-300 underline underline-offset-2">API
+                            Docs</a>
+                    </p>
+                </div>
+                <span
+                    class="inline-flex items-center gap-1.5 bg-green-600/15 text-green-400 text-sm font-medium px-3 py-1 rounded-full border border-green-500/20">
+                    <span id="visits-per-tree">—</span> visits = 1 tree
+                </span>
+            </header>
+
+            <div
+                class="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 mb-6 sm:mb-10">
+                <div
+                    class="bg-gray-900 rounded-xl p-4 sm:p-5 flex items-center gap-4 sm:block">
+                    <p class="text-gray-400 text-sm">Total Visits</p>
+                    <p id="total-visits"
+                        class="text-xl sm:text-2xl font-bold sm:mt-1 ml-auto sm:ml-0">—</p>
+                </div>
+                <div
+                    class="bg-gray-900 rounded-xl p-4 sm:p-5 flex items-center gap-4 sm:block">
+                    <p class="text-gray-400 text-sm">Total Customers</p>
+                    <p id="total-customers"
+                        class="text-xl sm:text-2xl font-bold sm:mt-1 ml-auto sm:ml-0">—</p>
+                </div>
+                <div
+                    class="bg-gray-900 rounded-xl p-4 sm:p-5 flex items-center gap-4 sm:block">
+                    <p class="text-gray-400 text-sm">Trees Planted</p>
+                    <p id="total-trees"
+                        class="text-xl sm:text-2xl font-bold sm:mt-1 ml-auto sm:ml-0">—</p>
+                </div>
+            </div>
+
+            <div class="bg-gray-900 rounded-xl p-4 sm:p-6 mb-6 sm:mb-10">
+                <h2 class="text-base sm:text-lg font-semibold mb-3">Visits per
+                    Hour</h2>
+                <div class="w-full" style="max-height: 200px;">
+                    <canvas id="chart"></canvas>
+                </div>
+            </div>
+
+            <div class="bg-gray-900 rounded-xl p-4 sm:p-6 mb-6 sm:mb-10">
+                <h2
+                    class="text-base sm:text-lg font-semibold mb-3">Customers</h2>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm text-left">
+                        <thead class="text-gray-400 border-b border-gray-800">
+                            <tr>
+                                <th class="pb-2 pr-4">ID</th>
+                                <th class="pb-2 pr-4 text-right">Visits</th>
+                                <th class="pb-2 pr-4 text-right">Trees</th>
+                                <th class="pb-2 text-right">Last Visit</th>
+                            </tr>
+                        </thead>
+                        <tbody id="customers-table"></tbody>
+                    </table>
+                </div>
+                <p id="no-customers"
+                    class="text-gray-600 text-sm mt-3 hidden">No customers
+                    yet</p>
+            </div>
+
+        </div>
+
+        <footer class="text-center text-gray-700 text-xs py-4">
+            Tree Count — by Adrii
+        </footer>
+
+        <script src="/static/dashboard.js"></script>
+    </body>
+</html>

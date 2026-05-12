@@ -1,1 +1,198 @@
-# Tree-Count
+# Tree-Count: X Visits = 1 Tree
+
+## Context
+
+System where **shop visits lead to planting trees for customers**. A physical device (out of scope) detects when a user enters a shop and sends an event to a web service. This repo implements that web service.
+
+## Included
+
+- Backend API for registering visits and tracking customers.
+- Dashboard showing visits per hour, totals, customers, and trees planted.
+- PostgreSQL persistence running through Docker.
+- Swagger/OpenAPI documentation.
+- End-to-end tests against the running service.
+
+---
+
+## Architecture
+
+```
+  ┌───────────────┐               ┌─────────────────────┐
+  │    Device     │               │      Browser        │
+  │ (out of scope)│               │ Dashboard · Swagger │
+  └──────┬────────┘               └──────────┬──────────┘
+         │                                   │
+         │  POST /api/visits {customerId}    │  GET /api/* · GET /docs
+         ▼                                   ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                      Hono Server (:3030)                        │
+│                                                                 │
+│   ┌─────────────┐  ┌──────────────┐  ┌──────────┐  ┌────────┐   │
+│   │  routes/    │  │   crud/      │  │ schemas/ │  │  db/   │   │
+│   │             │  │              │  │          │  │        │   │
+│   │ visit.ts    │─▶│ customer.ts  │─▶│ customer │─▶│index.ts│   │
+│   │ customer.ts │  │ visit.ts     │  │ visit    │  │        │   │
+│   │ docs.ts     │  └──────────────┘  └──────────┘  └───┬────┘   │
+│   │ index.ts    │                                      │        │
+│   └─────────────┘   ┌──────────────┐                   │        │
+│                     │   config/    │                   │        │
+│                     │ settings.ts  │                   │        │
+│                     └──────────────┘                   │        │
+└────────────────────────────────────────────────────────┼────────┘
+                                                         │
+                                                         ▼
+                                                  ┌────────────┐
+                                                  │ PostgreSQL │
+                                                  └────────────┘
+
+Request flow:  routes/ ──▶ crud/ ──▶ schemas/ ──▶ db/ ──▶ PostgreSQL
+```
+
+### Visit Flow
+
+```
+  Device            routes/visit.ts        crud/customer.ts      crud/visit.ts       PostgreSQL
+    │                     │                      │                    │                │
+    │─ POST {customerId} ▶│                      │                    │                │
+    │                     │─ recordVisit() ──────────────────────────▶│                │
+    │                     │                      │── get/create ──────────────────────▶│
+    │                     │                      │                    │── insert visit▶│
+    │                     │                      │── update counters/time ────────────▶│
+    │◀ {customer, tree} ──│                      │                    │                │
+```
+
+---
+
+## Technical Decisions
+
+| Decision | Choice | Why |
+|----------|--------|-----|
+| **Framework** | Hono | Lightweight TypeScript API server |
+| **ORM** | Drizzle | Type-safe queries with little overhead |
+| **Database** | PostgreSQL | Persistent storage, provided by Docker |
+| **Frontend** | Vanilla TS + Tailwind CDN | Simple dashboard without a frontend framework |
+| **Schema management** | Auto-create on boot | Tables are created with `CREATE TABLE IF NOT EXISTS` |
+| **Testing** | E2E tests | Verifies the service through HTTP |
+| **API docs** | Swagger/OpenAPI | Interactive API reference at `/docs` |
+
+---
+
+## How to Run
+
+### Prerequisites
+
+- Docker
+
+### Run
+
+```bash
+cp .env.example .env
+docker compose up --build
+```
+
+Starts PostgreSQL + app. Tables are created automatically on boot. Server at `http://localhost:3030`.
+
+### Environment
+
+All config lives in `.env`, loaded by `docker-compose` via `env_file`:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PORT` | `3030` | Server port |
+| `DATABASE_URL` | `postgres://...@db:5432/treecount` | PostgreSQL connection string (Docker internal hostname) |
+| `VISITS_PER_TREE` | `5` | Number of visits required to plant one tree |
+
+### Running tests
+
+Tests run against the live server. With Docker running, execute:
+
+```bash
+docker compose exec app pnpm run test:e2e
+```
+
+`test:e2e` waits until the API is accepting connections, then runs the test suite.
+
+---
+
+## Assumptions
+
+- **Customer ID is provided by the device** — the service does not handle authentication or customer registration. The device sends a `customerId` string and the service creates the customer on first visit.
+- **One visit per request** — each POST to `/api/visits` counts as exactly one visit. No batch or deduplication logic.
+- **Visits are timestamped server-side** — the `visitedAt` timestamp is generated by the server, not sent by the device.
+- **Tree threshold is global** — `VISITS_PER_TREE` applies equally to all customers.
+- **Per-hour aggregation is across all customers** — the dashboard shows total visits per hour, not per customer.
+
+---
+
+## API Usage
+
+### Register a visit
+
+```bash
+curl -X POST http://localhost:3030/api/visits \
+  -H "Content-Type: application/json" \
+  -d '{"customerId": "user-1"}'
+```
+
+**Response (201):**
+```json
+{
+  "customer": {
+    "id": "user-1",
+    "visitCount": 5,
+    "treesPlanted": 1,
+    "lastConnectionAt": "2026-05-11T17:54:29.858Z"
+  },
+  "treePlanted": true
+}
+```
+
+### Get all customers
+
+```bash
+curl http://localhost:3030/api/customers
+```
+
+### Get customer by ID
+
+```bash
+curl http://localhost:3030/api/customers/user-1
+```
+
+### Get visits aggregated per hour
+
+```bash
+curl http://localhost:3030/api/visits/per-hour
+```
+
+**Response:**
+```json
+[
+  { "hour": "2026-05-11 17:00", "count": 12 },
+  { "hour": "2026-05-11 18:00", "count": 3 }
+]
+```
+
+### Get service config
+
+```bash
+curl http://localhost:3030/api/config
+```
+
+### Health check
+
+```bash
+curl http://localhost:3030/api/health
+```
+
+**Response:** `OK`
+
+---
+
+## URLs
+
+| URL | Description |
+|-----|-------------|
+| `http://localhost:3030` | Dashboard |
+| `http://localhost:3030/docs` | Swagger UI |
+| `http://localhost:3030/docs/openapi.json` | OpenAPI spec |

@@ -1,0 +1,28 @@
+node_modules/
+dist/
+.pnpm-store
+
+# Environment
+.env
+
+# Database
+*.db
+*.db-*
+
+# OS
+.DS_Store
+
+# Editor
+.vscode/
+.idea/
+*.sw?
+
+# Logs
+*.log
+
+# Build
+src/public/dashboard.js
+
+# Claude / AI
+.claude/
+.agents/
