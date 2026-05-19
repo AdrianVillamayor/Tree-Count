@@ -34,6 +34,6 @@ export async function initDb() {
         CREATE INDEX IF NOT EXISTS idx_visits_visited_at ON visits(visited_at)
     `;
     await client`
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_visits_idempotency_key ON visits(idempotency_key)
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_visits_idempotency_key ON visits(customer_id, idempotency_key)
     `;
 }

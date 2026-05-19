@@ -8,9 +8,12 @@ Tree Count is a small web service where **shop visits lead to planting trees for
 
 - Backend API to register visit events.
 - Customer visit and tree counters persisted in PostgreSQL.
+- Idempotent visit registration to handle device retries safely.
+- Concurrent-safe writes via transactional atomic counters.
+- Request validation with Zod schemas.
 - Dashboard with visits per hour, totals, customers, and trees planted.
 - Swagger/OpenAPI documentation.
-- End-to-end tests against the running Docker service.
+- Unit tests for domain logic and end-to-end tests against the running Docker service.
 
 ---
 
@@ -34,44 +37,59 @@ Tree Count is a small web service where **shop visits lead to planting trees for
 │   │ customer.ts │  │ visit.ts     │  │ visit    │  │        │   │
 │   │ docs.ts     │  └──────────────┘  └──────────┘  └───┬────┘   │
 │   │ index.ts    │                                      │        │
-│   └─────────────┘   ┌──────────────┐                   │        │
-│                     │   config/    │                   │        │
-│                     │ settings.ts  │                   │        │
-│                     └──────────────┘                   │        │
-└────────────────────────────────────────────────────────┼────────┘
-                                                         │
-                                                         ▼
-                                                  ┌────────────┐
-                                                  │ PostgreSQL │
-                                                  └────────────┘
+│   └─────────────┘  ┌──────────────┐  ┌──────────┐     │        │
+│                    │  domain/     │  │validation│     │        │
+│                    │  trees.ts    │  │ visit.ts │     │        │
+│                    └──────────────┘  └──────────┘     │        │
+│                    ┌──────────────┐                    │        │
+│                    │   config/    │                    │        │
+│                    │ settings.ts  │                    │        │
+│                    └──────────────┘                    │        │
+└───────────────────────────────────────────────────────┼────────┘
+                                                        │
+                                                        ▼
+                                                 ┌────────────┐
+                                                 │ PostgreSQL │
+                                                 └────────────┘
 
-Request flow: routes/ -> crud/ -> schemas/ -> db/ -> PostgreSQL
+Request flow: routes/ -> validation/ -> crud/ -> domain/ -> schemas/ -> db/ -> PostgreSQL
 ```
 
 ### Visit Flow
 
 ```
-  Device            routes/visit.ts        crud/visit.ts        crud/customer.ts       PostgreSQL
-    │                     │                      │                    │                  │
-    │─ POST {customerId} ▶│                      │                    │                  │
-    │                     │─ recordVisit() ─────▶│                    │                  │
-    │                     │                      │─ get/create ─────▶│── SELECT/INSERT ▶│
-    │                     │                      │── insert visit ────────────────────▶│
-    │                     │                      │─ update customer ▶│── UPDATE ───────▶│
-    │◀ {customer, tree} ──│                      │                    │                  │
+  Device            routes/visit.ts        crud/visit.ts              PostgreSQL
+    │                     │                      │                       │
+    │─ POST {customerId} ▶│                      │                       │
+    │                     │─ validate (Zod) ────▶│                       │
+    │                     │─ recordVisit() ─────▶│                       │
+    │                     │                      │── BEGIN TRANSACTION ──▶│
+    │                     │                      │── UPSERT customer ───▶│
+    │                     │                      │── INSERT visit ──────▶│
+    │                     │                      │── UPDATE counters ───▶│  (atomic SQL)
+    │                     │                      │── COMMIT ────────────▶│
+    │◀ {customer, tree} ──│                      │                       │
 ```
 
 ---
 
 ## Technical Decisions
 
-- **Hono for the API server**: Hono was mentioned as part of the team's stack, so I used this project to try it in a small service. It keeps the routing code compact and straightforward.
-- **Drizzle for database access**: The data layer stays close to SQL while still getting typed queries from the schema definitions.
-- **PostgreSQL for persistence**: The assessment allowed simpler persistence, but PostgreSQL makes the visit and customer state durable without adding local setup thanks to Docker.
-- **Vanilla TypeScript for the dashboard**: The frontend is only a dashboard, so a small browser script is enough.
-- **Auto-created tables on startup**: The service creates the required tables when it boots, keeping the run instructions short.
-- **End-to-end tests**: The tests call the API over HTTP against the running service, covering the main flow without mocks.
-- **Swagger/OpenAPI docs**: `/docs` is the detailed API reference, while the README only shows the main device request.
+- **Hono** for the API server: lightweight, Web Standards-based routing.
+- **Drizzle ORM** for database access: typed queries close to SQL.
+- **PostgreSQL** for persistence: durable state via Docker with no local setup.
+- **Zod** for request validation: single schema drives both route validation and OpenAPI constraints.
+- **Domain logic extraction**: tree-threshold calculation lives in a pure function (`domain/trees.ts`) with unit tests independent of the database.
+- **Auto-created tables on startup**: the service creates tables and indices when it boots.
+- **Vanilla TypeScript dashboard**: the frontend is only a dashboard, so a small browser script is enough.
+
+### Reliability
+
+| Concern | Solution |
+|---------|----------|
+| **Concurrent writes** | `recordVisit` runs inside a transaction with SQL-level arithmetic (`visit_count + 1`). PostgreSQL serializes concurrent UPDATEs on the same row, so no lost updates. |
+| **Device retries** | Optional `idempotencyKey` with a unique index on `(customer_id, idempotency_key)`. Duplicate key → `ON CONFLICT DO NOTHING` → returns current state without incrementing. |
+| **Query performance** | Indices on `visits.customer_id` (FK lookups) and `visits.visited_at` (hourly aggregation). |
 
 ---
 
@@ -88,7 +106,7 @@ cp .env.example .env
 docker compose up --build
 ```
 
-This starts PostgreSQL and the app. Tables are created automatically on boot.
+This starts PostgreSQL and the app. Tables and indices are created automatically on boot.
 
 Open `http://localhost:3030` for the dashboard and `http://localhost:3030/docs` for the API docs.
 
@@ -104,23 +122,19 @@ All config lives in `.env`, loaded by `docker-compose` via `env_file`:
 
 ### Running tests
 
-Tests run against the live service. Keep Docker running, then execute:
+**Unit tests** (no Docker needed):
+
+```bash
+pnpm run test:unit
+```
+
+**E2E tests** (requires Docker running):
 
 ```bash
 docker compose exec app pnpm run test:e2e
 ```
 
-`test:e2e` waits until the API is accepting connections, then runs the test suite.
-
----
-
-## Assumptions
-
-- **Customer ID is provided by the device**: the service does not handle authentication or customer registration. The device sends a `customerId` string and the service creates the customer on first visit.
-- **One visit per request**: each POST to `/api/visits` counts as exactly one visit. There is no batch or deduplication logic.
-- **Visits are timestamped server-side**: the `visitedAt` timestamp is generated by the server, not sent by the device.
-- **Tree threshold is global**: `VISITS_PER_TREE` applies equally to all customers.
-- **Hourly aggregation is global**: the dashboard shows total visits per hour across all customers.
+`test:e2e` waits until the API is accepting connections, then runs the full test suite.
 
 ---
 
@@ -134,16 +148,22 @@ Request body:
 
 ```json
 {
-  "customerId": "user-1"
+  "customerId": "user-1",
+  "idempotencyKey": "evt-abc-123"
 }
 ```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `customerId` | string (4-32 chars) | Yes | Customer identifier provided by the device |
+| `idempotencyKey` | string (1-64 chars) | No | Deduplication key. If a visit with this key already exists, the request is a no-op |
 
 Example request:
 
 ```bash
 curl -X POST http://localhost:3030/api/visits \
   -H "Content-Type: application/json" \
-  -d '{"customerId": "user-1"}'
+  -d '{"customerId": "user-1", "idempotencyKey": "evt-abc-123"}'
 ```
 
 Example response:
@@ -160,7 +180,18 @@ Example response:
 }
 ```
 
-The dashboard also uses the API to load hourly visit totals. The complete API reference is available at `http://localhost:3030/docs`.
+The complete API reference is available at `http://localhost:3030/docs`.
+
+---
+
+## Assumptions
+
+- **Customer ID is provided by the device**: the service does not handle authentication or customer registration. The device sends a `customerId` string and the service creates the customer on first visit.
+- **One visit per request**: each POST to `/api/visits` counts as exactly one visit.
+- **Idempotency is opt-in and scoped per customer**: devices that send an `idempotencyKey` get deduplication within the same `customerId`; those that don't will always increment counters.
+- **Visits are timestamped server-side**: the `visitedAt` timestamp is generated by the server, not sent by the device.
+- **Tree threshold is global**: `VISITS_PER_TREE` applies equally to all customers.
+- **Hourly aggregation is global**: the dashboard shows total visits per hour across all customers.
 
 ---
 
@@ -171,3 +202,16 @@ The dashboard also uses the API to load hourly visit totals. The complete API re
 | `http://localhost:3030` | Dashboard |
 | `http://localhost:3030/docs` | Swagger UI |
 | `http://localhost:3030/docs/openapi.json` | OpenAPI spec |
+
+---
+
+## Tech Stack
+
+| Component | Version |
+|-----------|---------|
+| Node.js | 22 LTS |
+| Hono | 4.12 |
+| Drizzle ORM | 0.45 |
+| Zod | 4 |
+| PostgreSQL | 16 |
+| TypeScript | 6 |

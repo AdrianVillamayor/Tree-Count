@@ -11,7 +11,7 @@ export const visits = pgTable("visits", {
 }, (table) => ({
     idxCustomerId: index("idx_visits_customer_id").on(table.customerId),
     idxVisitedAt: index("idx_visits_visited_at").on(table.visitedAt),
-    idxIdempotencyKey: uniqueIndex("idx_visits_idempotency_key").on(table.idempotencyKey),
+    idxIdempotencyKey: uniqueIndex("idx_visits_idempotency_key").on(table.customerId, table.idempotencyKey),
 }));
 
 export type Visit = typeof visits.$inferSelect;
