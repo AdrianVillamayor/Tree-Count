@@ -5,7 +5,7 @@
     "type": "module",
     "packageManager": "pnpm@10.32.1",
     "engines": {
-        "node": ">=20"
+        "node": ">=22"
     },
     "scripts": {
         "dev": "pnpm build:frontend && tsx watch src/index.ts",
@@ -13,20 +13,22 @@
         "build:frontend": "esbuild src/public/dashboard.ts --bundle --outfile=src/public/dashboard.js --minify",
         "start": "node dist/index.js",
         "test": "node --import tsx --test tests/*.test.ts",
+        "test:unit": "node --import tsx --test tests/unit/*.test.ts",
         "test:e2e": "node --import tsx tests/wait-for-server.ts && pnpm test"
     },
     "dependencies": {
-        "@hono/node-server": "^1.11.0",
-        "drizzle-orm": "^0.31.0",
-        "hono": "^4.4.0",
-        "postgres": "^3.4.9"
+        "@hono/node-server": "^2.0.3",
+        "drizzle-orm": "^0.45.2",
+        "hono": "^4.12.21",
+        "postgres": "^3.4.9",
+        "zod": "^4.4.3"
     },
     "devDependencies": {
-        "@types/node": "^20.14.0",
-        "drizzle-kit": "^0.22.0",
+        "@types/node": "^25.9.0",
+        "drizzle-kit": "^0.31.10",
         "esbuild": "^0.28.0",
         "tsconfig-paths": "^4.2.0",
-        "tsx": "^4.15.0",
-        "typescript": "^5.5.0"
+        "tsx": "^4.22.3",
+        "typescript": "^6.0.3"
     }
 }

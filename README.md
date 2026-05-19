@@ -2,15 +2,15 @@
 
 ## Context
 
-System where **shop visits lead to planting trees for customers**. A physical device (out of scope) detects when a user enters a shop and sends an event to a web service. This repo implements that web service.
+Tree Count is a small web service where **shop visits lead to planting trees for customers**. The physical device is out of scope; this repository implements the service that receives its visit events.
 
 ## Included
 
-- Backend API for registering visits and tracking customers.
-- Dashboard showing visits per hour, totals, customers, and trees planted.
-- PostgreSQL persistence running through Docker.
+- Backend API to register visit events.
+- Customer visit and tree counters persisted in PostgreSQL.
+- Dashboard with visits per hour, totals, customers, and trees planted.
 - Swagger/OpenAPI documentation.
-- End-to-end tests against the running service.
+- End-to-end tests against the running Docker service.
 
 ---
 
@@ -19,10 +19,10 @@ System where **shop visits lead to planting trees for customers**. A physical de
 ```
   ┌───────────────┐               ┌─────────────────────┐
   │    Device     │               │      Browser        │
-  │ (out of scope)│               │ Dashboard · Swagger │
+  │ (out of scope)│               │ Dashboard · Docs    │
   └──────┬────────┘               └──────────┬──────────┘
          │                                   │
-         │  POST /api/visits {customerId}    │  GET /api/* · GET /docs
+         │  POST /api/visits {customerId}    │  GET / · GET /docs · GET /api/*
          ▼                                   ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                      Hono Server (:3030)                        │
@@ -45,35 +45,33 @@ System where **shop visits lead to planting trees for customers**. A physical de
                                                   │ PostgreSQL │
                                                   └────────────┘
 
-Request flow:  routes/ ──▶ crud/ ──▶ schemas/ ──▶ db/ ──▶ PostgreSQL
+Request flow: routes/ -> crud/ -> schemas/ -> db/ -> PostgreSQL
 ```
 
 ### Visit Flow
 
 ```
-  Device            routes/visit.ts        crud/customer.ts      crud/visit.ts       PostgreSQL
-    │                     │                      │                    │                │
-    │─ POST {customerId} ▶│                      │                    │                │
-    │                     │─ recordVisit() ──────────────────────────▶│                │
-    │                     │                      │── get/create ──────────────────────▶│
-    │                     │                      │                    │── insert visit▶│
-    │                     │                      │── update counters/time ────────────▶│
-    │◀ {customer, tree} ──│                      │                    │                │
+  Device            routes/visit.ts        crud/visit.ts        crud/customer.ts       PostgreSQL
+    │                     │                      │                    │                  │
+    │─ POST {customerId} ▶│                      │                    │                  │
+    │                     │─ recordVisit() ─────▶│                    │                  │
+    │                     │                      │─ get/create ─────▶│── SELECT/INSERT ▶│
+    │                     │                      │── insert visit ────────────────────▶│
+    │                     │                      │─ update customer ▶│── UPDATE ───────▶│
+    │◀ {customer, tree} ──│                      │                    │                  │
 ```
 
 ---
 
 ## Technical Decisions
 
-| Decision | Choice | Why |
-|----------|--------|-----|
-| **Framework** | Hono | Lightweight TypeScript API server |
-| **ORM** | Drizzle | Type-safe queries with little overhead |
-| **Database** | PostgreSQL | Persistent storage, provided by Docker |
-| **Frontend** | Vanilla TS + Tailwind CDN | Simple dashboard without a frontend framework |
-| **Schema management** | Auto-create on boot | Tables are created with `CREATE TABLE IF NOT EXISTS` |
-| **Testing** | E2E tests | Verifies the service through HTTP |
-| **API docs** | Swagger/OpenAPI | Interactive API reference at `/docs` |
+- **Hono for the API server**: Hono was mentioned as part of the team's stack, so I used this project to try it in a small service. It keeps the routing code compact and straightforward.
+- **Drizzle for database access**: The data layer stays close to SQL while still getting typed queries from the schema definitions.
+- **PostgreSQL for persistence**: The assessment allowed simpler persistence, but PostgreSQL makes the visit and customer state durable without adding local setup thanks to Docker.
+- **Vanilla TypeScript for the dashboard**: The frontend is only a dashboard, so a small browser script is enough.
+- **Auto-created tables on startup**: The service creates the required tables when it boots, keeping the run instructions short.
+- **End-to-end tests**: The tests call the API over HTTP against the running service, covering the main flow without mocks.
+- **Swagger/OpenAPI docs**: `/docs` is the detailed API reference, while the README only shows the main device request.
 
 ---
 
@@ -90,7 +88,9 @@ cp .env.example .env
 docker compose up --build
 ```
 
-Starts PostgreSQL + app. Tables are created automatically on boot. Server at `http://localhost:3030`.
+This starts PostgreSQL and the app. Tables are created automatically on boot.
+
+Open `http://localhost:3030` for the dashboard and `http://localhost:3030/docs` for the API docs.
 
 ### Environment
 
@@ -104,7 +104,7 @@ All config lives in `.env`, loaded by `docker-compose` via `env_file`:
 
 ### Running tests
 
-Tests run against the live server. With Docker running, execute:
+Tests run against the live service. Keep Docker running, then execute:
 
 ```bash
 docker compose exec app pnpm run test:e2e
@@ -116,17 +116,29 @@ docker compose exec app pnpm run test:e2e
 
 ## Assumptions
 
-- **Customer ID is provided by the device** — the service does not handle authentication or customer registration. The device sends a `customerId` string and the service creates the customer on first visit.
-- **One visit per request** — each POST to `/api/visits` counts as exactly one visit. No batch or deduplication logic.
-- **Visits are timestamped server-side** — the `visitedAt` timestamp is generated by the server, not sent by the device.
-- **Tree threshold is global** — `VISITS_PER_TREE` applies equally to all customers.
-- **Per-hour aggregation is across all customers** — the dashboard shows total visits per hour, not per customer.
+- **Customer ID is provided by the device**: the service does not handle authentication or customer registration. The device sends a `customerId` string and the service creates the customer on first visit.
+- **One visit per request**: each POST to `/api/visits` counts as exactly one visit. There is no batch or deduplication logic.
+- **Visits are timestamped server-side**: the `visitedAt` timestamp is generated by the server, not sent by the device.
+- **Tree threshold is global**: `VISITS_PER_TREE` applies equally to all customers.
+- **Hourly aggregation is global**: the dashboard shows total visits per hour across all customers.
 
 ---
 
-## API Usage
+## How to use the API
 
-### Register a visit
+The device sends one visit event per request. The main endpoint is:
+
+`POST /api/visits`
+
+Request body:
+
+```json
+{
+  "customerId": "user-1"
+}
+```
+
+Example request:
 
 ```bash
 curl -X POST http://localhost:3030/api/visits \
@@ -134,7 +146,8 @@ curl -X POST http://localhost:3030/api/visits \
   -d '{"customerId": "user-1"}'
 ```
 
-**Response (201):**
+Example response:
+
 ```json
 {
   "customer": {
@@ -147,45 +160,7 @@ curl -X POST http://localhost:3030/api/visits \
 }
 ```
 
-### Get all customers
-
-```bash
-curl http://localhost:3030/api/customers
-```
-
-### Get customer by ID
-
-```bash
-curl http://localhost:3030/api/customers/user-1
-```
-
-### Get visits aggregated per hour
-
-```bash
-curl http://localhost:3030/api/visits/per-hour
-```
-
-**Response:**
-```json
-[
-  { "hour": "2026-05-11 17:00", "count": 12 },
-  { "hour": "2026-05-11 18:00", "count": 3 }
-]
-```
-
-### Get service config
-
-```bash
-curl http://localhost:3030/api/config
-```
-
-### Health check
-
-```bash
-curl http://localhost:3030/api/health
-```
-
-**Response:** `OK`
+The dashboard also uses the API to load hourly visit totals. The complete API reference is available at `http://localhost:3030/docs`.
 
 ---
 

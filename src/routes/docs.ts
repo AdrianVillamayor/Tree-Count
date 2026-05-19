@@ -23,6 +23,7 @@ const openApiSpec = {
                                 required: ["customerId"],
                                 properties: {
                                     customerId: { type: "string", minLength: 4, maxLength: 32, example: "user-1" },
+                                    idempotencyKey: { type: "string", minLength: 1, maxLength: 64, example: "evt-abc-123", description: "Optional deduplication key. If a visit with this key already exists, the request is a no-op." },
                                 },
                             },
                         },

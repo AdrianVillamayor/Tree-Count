@@ -109,4 +109,52 @@ describe("API E2E", () => {
         assert.ok(data.paths["/api/visits"]);
         assert.ok(data.paths["/api/health"]);
     });
+
+    it("POST /api/visits with idempotencyKey deduplicates", async () => {
+        const id = `idemp-${Date.now()}`;
+        const key = `key-${Date.now()}`;
+
+        // First request — creates visit
+        const res1 = await post("/api/visits", { customerId: id, idempotencyKey: key });
+        assert.equal(res1.status, 201);
+        const data1 = await res1.json();
+        assert.equal(data1.customer.visitCount, 1);
+
+        // Duplicate request — same idempotency key, no increment
+        const res2 = await post("/api/visits", { customerId: id, idempotencyKey: key });
+        assert.equal(res2.status, 201);
+        const data2 = await res2.json();
+        assert.equal(data2.customer.visitCount, 1); // still 1, not 2
+    });
+
+    it("POST /api/visits without idempotencyKey always increments", async () => {
+        const id = `no-key-${Date.now()}`;
+
+        await post("/api/visits", { customerId: id });
+        const res = await post("/api/visits", { customerId: id });
+        const data = await res.json();
+        assert.equal(data.customer.visitCount, 2);
+    });
+
+    it("concurrent visits for same customer produce correct counts", async () => {
+        const id = `conc-${Date.now()}`;
+
+        // Fire 10 concurrent visits
+        const responses = await Promise.all(
+            Array.from({ length: 10 }, () =>
+                post("/api/visits", { customerId: id })
+            ),
+        );
+
+        // All should succeed
+        for (const res of responses) {
+            assert.equal(res.status, 201);
+        }
+
+        // Verify final state
+        const res = await get(`/api/customers/${id}`);
+        const customer = await res.json();
+        assert.equal(customer.visitCount, 10);
+        assert.equal(customer.treesPlanted, 2); // 10 / 5 = 2 trees
+    });
 });

@@ -1,18 +1,21 @@
 import { Hono } from "hono";
 import { getVisitsPerHour, recordVisit } from "@crud/visit.js";
 import { env } from "@/config/settings.js";
+import { visitRequestSchema } from "@/validation/visit.js";
 
 const visitRoutes = new Hono();
 
 visitRoutes.post("/", async (c) => {
     const body = await c.req.json();
-    const { customerId } = body;
+    const parsed = visitRequestSchema.safeParse(body);
 
-    if (!customerId || typeof customerId !== "string" || customerId.length < 4 || customerId.length > 32) {
-        return c.json({ error: "customerId must be between 4 and 32 characters" }, 400);
+    if (!parsed.success) {
+        const firstError = parsed.error.issues[0];
+        return c.json({ error: firstError.message }, 400);
     }
 
-    const { treePlanted, ...customer } = await recordVisit(customerId, env.visitsPerTree);
+    const { customerId, idempotencyKey } = parsed.data;
+    const { treePlanted, ...customer } = await recordVisit(customerId, env.visitsPerTree, idempotencyKey);
 
     return c.json({
         customer,

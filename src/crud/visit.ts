@@ -1,36 +1,53 @@
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { db } from "@db/index.js";
-import { createCustomer, getCustomer, updateCustomerVisit } from "@crud/customer.js";
+import { customers } from "@schemas/customer.js";
 import type { Customer } from "@schemas/customer.js";
 import { visits } from "@schemas/visit.js";
+import { calculateNewTrees } from "@/domain/trees.js";
 
 type VisitRegistration = Customer & { treePlanted: boolean };
 
-export async function createVisit(customerId: string) {
-    const rows = await db
-        .insert(visits)
-        .values({ customerId })
-        .returning();
-    return rows[0];
-}
+export async function recordVisit(
+    customerId: string,
+    visitsPerTree: number,
+    idempotencyKey?: string,
+): Promise<VisitRegistration> {
+    return db.transaction(async (tx) => {
+        // Upsert customer: create if not exists, no-op if exists
+        await tx.insert(customers).values({ id: customerId }).onConflictDoNothing();
 
-export async function recordVisit(customerId: string, visitsPerTree: number): Promise<VisitRegistration> {
-    let customer = await getCustomer(customerId);
-    if (!customer) {
-        customer = await createCustomer(customerId);
-    }
+        // Insert visit with optional idempotency key
+        const visitInsert = await tx.insert(visits)
+            .values({
+                customerId,
+                ...(idempotencyKey ? { idempotencyKey } : {}),
+            })
+            .onConflictDoNothing()
+            .returning();
 
-    await createVisit(customerId);
+        // Duplicate request — return current state without incrementing
+        if (idempotencyKey && visitInsert.length === 0) {
+            const [customer] = await tx.select().from(customers).where(eq(customers.id, customerId));
+            return { ...customer, treePlanted: false };
+        }
 
-    const visitCount = customer.visitCount + 1;
-    const treesToAdd = Math.floor(visitCount / visitsPerTree) - Math.floor(customer.visitCount / visitsPerTree);
-    const treesPlanted = customer.treesPlanted + treesToAdd;
-    const updatedCustomer = await updateCustomerVisit(customerId, visitCount, treesPlanted);
+        // Atomic counter update SQL-level arithmetic prevents lost updates
+        // PostgreSQL serializes concurrent UPDATEs on the same row:
+        // second transaction waits for first to commit, then re-reads row
+        const [updated] = await tx.update(customers)
+            .set({
+                visitCount: sql`visit_count + 1`,
+                treesPlanted: sql`trees_planted + (floor((visit_count + 1)::numeric / ${visitsPerTree}) - floor(visit_count::numeric / ${visitsPerTree}))::int`,
+                lastConnectionAt: new Date(),
+            })
+            .where(eq(customers.id, customerId))
+            .returning();
 
-    return {
-        ...updatedCustomer,
-        treePlanted: treesToAdd > 0,
-    };
+        // Derive treePlanted flag from the post-update state only
+        const treePlanted = calculateNewTrees(updated.visitCount - 1, visitsPerTree) > 0;
+
+        return { ...updated, treePlanted };
+    });
 }
 
 export async function getVisitsPerHour() {

@@ -18,20 +18,3 @@ export async function createCustomer(id: string) {
         .returning();
     return rows[0];
 }
-
-export async function updateCustomerVisit(
-    id: string,
-    visitCount: number,
-    treesPlanted: number,
-) {
-    const rows = await db
-        .update(customers)
-        .set({
-            visitCount,
-            treesPlanted,
-            lastConnectionAt: new Date(),
-        })
-        .where(eq(customers.id, id))
-        .returning();
-    return rows[0];
-}
